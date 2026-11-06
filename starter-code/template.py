@@ -67,7 +67,42 @@ def call_openai(
     """
     # TODO: Import OpenAI, instantiate client, call chat.completions.create with parameters,
     #       measure execution start/end time, extract text and token usage, and return them.
-    raise NotImplementedError("Implement call_openai")
+    from openai import OpenAI
+
+    # Lấy API Key từ biến môi trường
+    api_key = os.getenv("OPENAI_API_KEY")
+
+    # Khởi tạo OpenAI Client
+    client = OpenAI(api_key=api_key)
+
+    # Bắt đầu đo thời gian
+    start_time = time.time()
+
+    # Gửi yêu cầu đến OpenAI API
+    response = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "user", "content": prompt}
+        ],
+        temperature=temperature,
+        top_p=top_p,
+        max_tokens=max_tokens
+    )
+
+    # Tính thời gian thực thi
+    latency = time.time() - start_time
+
+    # Lấy nội dung phản hồi
+    response_text = response.choices[0].message.content or ""
+
+    # Lấy thông tin token
+    usage = {
+        "input_tokens": response.usage.prompt_tokens,
+        "output_tokens": response.usage.completion_tokens
+    }
+
+    return response_text, latency, usage
+# raise NotImplementedError("Implement call_openai")
 
 
 # ---------------------------------------------------------------------------
@@ -115,7 +150,44 @@ def call_gemini(
     """
     # TODO: Initialize Gemini client, set config parameters, call generate_content,
     #       measure latency, extract response text and usage metadata, and return the tuple.
-    raise NotImplementedError("Implement call_gemini")
+        # Import Google GenAI SDK
+    from google import genai
+    from google.genai import types
+
+    # Lấy API Key từ biến môi trường
+    api_key = os.getenv("GEMINI_API_KEY")
+
+    # Khởi tạo Gemini Client
+    client = genai.Client(api_key=api_key)
+
+    # Bắt đầu đo thời gian
+    start_time = time.time()
+
+    # Gửi yêu cầu đến Gemini API
+    response = client.models.generate_content(
+        model=model,
+        contents=prompt,
+        config=types.GenerateContentConfig(
+            temperature=temperature,
+            top_p=top_p,
+            max_output_tokens=max_tokens
+        )
+    )
+
+    # Tính thời gian thực thi
+    latency = time.time() - start_time
+
+    # Lấy nội dung phản hồi
+    response_text = response.text or ""
+
+    # Lấy thông tin token
+    usage = {
+        "input_tokens": response.usage_metadata.prompt_token_count,
+        "output_tokens": response.usage_metadata.candidates_token_count
+    }
+
+    return response_text, latency, usage
+    # raise NotImplementedError("Implement call_gemini")
 
 
 # ---------------------------------------------------------------------------
@@ -152,7 +224,46 @@ def call_anthropic(
     """
     # TODO: Initialize Anthropic client, create message, measure latency,
     #       extract content text and usage statistics, and return the tuple.
-    raise NotImplementedError("Implement call_anthropic")
+        # Import Anthropic SDK
+    import anthropic
+
+    # Lấy API Key từ biến môi trường
+    api_key = os.getenv("ANTHROPIC_API_KEY")
+
+    # Khởi tạo Anthropic Client
+    client = anthropic.Anthropic(api_key=api_key)
+
+    # Bắt đầu đo thời gian
+    start_time = time.time()
+
+    # Gửi yêu cầu đến Claude API
+    response = client.messages.create(
+        model=model,
+        max_tokens=max_tokens,
+        temperature=temperature,
+        top_p=top_p,
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
+
+    # Tính thời gian thực thi
+    latency = time.time() - start_time
+
+    # Lấy nội dung phản hồi
+    response_text = "".join(
+    block.text for block in response.content
+    if hasattr(block, "text")
+)
+
+    # Lấy thông tin token
+    usage = {
+        "input_tokens": response.usage.input_tokens,
+        "output_tokens": response.usage.output_tokens
+    }
+
+    return response_text, latency, usage
+    # raise NotImplementedError("Implement call_anthropic")
 
 
 # ---------------------------------------------------------------------------
@@ -175,12 +286,39 @@ def compare_models(prompt: str) -> dict:
             - "gemini_flash": { "response": str, "latency": float, "cost": float, "input_tokens": int, "output_tokens": int }
     """
     # TODO: Call call_openai with default gpt-4o model
+    gpt4o_result = call_openai(prompt, model="gpt-4o")
     # TODO: Call call_openai with gpt-4o-mini model
+    gpt4o_mini_result = call_openai(prompt, model="gpt-4o-mini")
     # TODO: Call call_gemini with default gemini-2.5-flash model
+    gemini_result = call_gemini(prompt, model="gemini-2.5-flash")
     # TODO: Calculate costs exactly based on input and output token counts using PRICING_1M_TOKENS
     #       Formula: Cost = (input_tokens * input_rate_per_1M + output_tokens * output_rate_per_1M) / 1,000,000
+    def calculate_cost(model_key: str, usage: dict) -> float:
+        pricing = PRICING_1M_TOKENS[model_key]
+
+        return (
+            usage["input_tokens"] * pricing["input"]
+            + usage["output_tokens"] * pricing["output"]
+        ) / 1_000_000
+
     # TODO: Assemble and return the comparison dictionary.
-    raise NotImplementedError("Implement compare_models")
+    def build_result(result: tuple, model_key: str) -> dict:
+        response, latency, usage = result
+
+        return {
+            "response": response,
+            "latency": latency,
+            "cost": calculate_cost(model_key, usage),
+            "input_tokens": usage["input_tokens"],
+            "output_tokens": usage["output_tokens"]
+        }
+
+    return {
+        "gpt4o": build_result(gpt4o_result, "gpt-4o"),
+        "gpt4o_mini": build_result(gpt4o_mini_result, "gpt-4o-mini"),
+        "gemini_flash": build_result(gemini_result, "gemini-2.5-flash")
+    }
+    # raise NotImplementedError("Implement compare_models")
 
 
 # ---------------------------------------------------------------------------
@@ -201,7 +339,63 @@ def streaming_chatbot() -> None:
         - Keep history limited to the last 3 turns to optimize context window and costs.
     """
     # TODO: Setup interactive session, prompt user for input, stream response, and update history.
-    raise NotImplementedError("Implement streaming_chatbot")
+    from google import genai
+    from google.genai import types
+
+    # Khởi tạo Gemini Client
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+
+    # Lưu lịch sử hội thoại
+    history = []
+
+    print("Gemini Chatbot started!")
+    print("Type 'quit' or 'exit' to end the session.\n")
+
+    while True:
+        user_input = input("You: ").strip()
+
+        if user_input.lower() in ["quit", "exit"]:
+            print("Goodbye!")
+            break
+
+        if not user_input:
+            continue
+
+        history.append({
+            "role": "user",
+            "parts": [{"text": user_input}]
+        })
+
+        history = history[-6:]
+
+        print("Gemini: ", end="", flush=True)
+        response_text = ""
+
+        stream = client.models.generate_content_stream(
+            model=GEMINI_MODEL,
+            contents=history,
+            config=types.GenerateContentConfig(
+                temperature=0.7,
+                top_p=0.9,
+                max_output_tokens=256
+            )
+        )
+
+        for chunk in stream:
+            if chunk.text:
+                print(chunk.text, end="", flush=True)
+                response_text += chunk.text
+
+        print("\n")
+
+        history.append({
+            "role": "model",
+            "parts": [{"text": response_text}]
+        })
+
+        history = history[-6:]
+    # raise NotImplementedError("Implement streaming_chatbot")
 
 
 # ---------------------------------------------------------------------------
@@ -228,7 +422,21 @@ def retry_with_backoff(
         The last exception raised by fn() after all retries are exhausted.
     """
     # TODO: implement retry loop with exponential backoff
-    raise NotImplementedError("Implement retry_with_backoff")
+
+    for attempt in range(max_retries + 1):
+        try:
+            # Thử thực thi hàm
+            return fn()
+
+        except Exception:
+            # Nếu đã hết số lần thử lại thì báo lỗi
+            if attempt == max_retries:
+                raise
+
+            # Chờ theo cấp số nhân: 0.1, 0.2, 0.4...
+            delay = base_delay * (2 ** attempt)
+            time.sleep(delay)
+    # raise NotImplementedError("Implement retry_with_backoff")
 
 
 # ---------------------------------------------------------------------------
@@ -246,6 +454,19 @@ def batch_compare(prompts: list[str]) -> list[dict]:
         key "prompt" containing the original prompt string.
     """
     # TODO: iterate over prompts, call compare_models, and inject the original "prompt".
+    # Khởi tạo danh sách kết quả
+    results = []
+    for prompt in prompts:
+        # So sánh 3 mô hình với cùng một câu hỏi
+        result = compare_models(prompt)
+
+        # Thêm câu hỏi gốc vào kết quả
+        result["prompt"] = prompt
+
+        # Lưu kết quả
+        results.append(result)
+
+    return results
     raise NotImplementedError("Implement batch_compare")
 
 
@@ -263,8 +484,46 @@ def format_comparison_table(results: list[dict]) -> str:
         A beautiful Markdown table string with columns:
         | Prompt | Model | Response (truncated) | Latency | Tokens (In/Out) | Cost (USD) |
     """
-    # TODO: Build and return the formatted table string. Truncate response to 50 chars for clean display.
-    raise NotImplementedError("Implement format_comparison_table")
+    # # Tạo tiêu đề bảng
+    table = [
+        "| Prompt | Model | Response (truncated) | Latency | Tokens (In/Out) | Cost (USD) |",
+        "|---|---|---|---:|---:|---:|"
+    ]
+
+    # Duyệt từng kết quả của mỗi prompt
+    for result in results:
+        prompt = result["prompt"]
+
+        # Duyệt từng mô hình
+        for model_name, stats in result.items():
+            if model_name == "prompt":
+                continue
+
+            # Chuyển key thành tên model dễ đọc
+            display_name = {
+                "gpt4o": "GPT-4o",
+                "gpt4o_mini": "GPT-4o-Mini",
+                "gemini_flash": "Gemini-Flash"
+            }.get(model_name, model_name)
+
+            # Lấy phản hồi và cắt còn tối đa 50 ký tự
+            response = stats["response"]
+            if len(response) > 50:
+                response = response[:47] + "..."
+
+            # Tạo một dòng trong bảng
+            row = (
+                f"| {prompt} "
+                f"| {display_name} "
+                f"| {response} "
+                f"| {stats['latency']:.2f}s "
+                f"| {stats['input_tokens']}/{stats['output_tokens']} "
+                f"| ${stats['cost']:.8f} |"
+            )
+
+            table.append(row)
+
+    return "\n".join(table)
 
 
 # ---------------------------------------------------------------------------
